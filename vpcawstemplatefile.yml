@@ -1,0 +1,205 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create a VPC with Public and Private Subnets and deploy EC2 instances
+
+Parameters:
+  VPCName:
+    Type: String
+    Default: MyVPC
+    Description: Name of the VPC newwwwwww
+
+  VPCCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR Block for the VPC
+
+  PublicSubnetCIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR Block for the public subnet
+
+  PrivateSubnetCIDR:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR Block for the private subnet
+
+  EC2InstanceType:
+    Type: String
+    Default: t2.micro
+    Description: EC2 instance type
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+
+Resources:
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PrivateSubnetCIDR
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable
+
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+ 
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  PublicInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access to the public EC2 instance
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: PublicInstanceSG
+
+
+  PrivateInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access from the public EC2 instance to the private EC2 instance
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref PublicInstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: PrivateInstanceSG
+
+
+  PublicEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref EC2InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref PublicInstanceSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: PublicEC2Instance
+      ImageId:
+        Fn::FindInMap:
+          - RegionMap
+          - !Ref "AWS::Region"
+          - AMI
+
+
+  PrivateEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref EC2InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref PrivateInstanceSecurityGroup
+      SubnetId: !Ref PrivateSubnet
+      Tags:
+        - Key: Name
+          Value: PrivateEC2Instance
+      ImageId:
+        Fn::FindInMap:
+          - RegionMap
+          - !Ref "AWS::Region"
+          - AMI
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-04b70fa74e45c3917
+    us-west-1:
+      AMI: ami-0e001c9271cf7f3b9
+    us-west-2:
+      AMI: ami-0103953a003440c37
+    eu-west-1:
+      AMI: ami-032346ab877c418af
+
+Outputs:
+  PublicInstanceID:
+    Description: ID of the EC2 instance in the public subnet
+    Value: !Ref PublicEC2Instance
+
+  PrivateInstanceID:
+    Description: ID of the EC2 instance in the private subnet
+    Value: !Ref PrivateEC2Instance
+
+  PublicInstancePublicIP:
+    Description: Public IP address of the EC2 instance in the public subnet
+    Value: !GetAtt [PublicEC2Instance, PublicIp]
+
+  PublicSubnetID:
+    Description: Subnet ID of the public subnet
+    Value: !Ref PublicSubnet
+
+  PrivateSubnetID:
+    Description: Subnet ID of the private subnet
+    Value: !Ref PrivateSubnet
